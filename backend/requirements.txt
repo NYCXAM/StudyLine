@@ -1,6 +1,9 @@
 fastapi
-openai
+uvicorn[standard]
 pymongo[srv]
 python-dotenv
-uvicorn[standard]
+openai
+pydantic
 certifi
+google-auth
+requests
