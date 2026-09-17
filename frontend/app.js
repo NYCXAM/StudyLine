@@ -866,8 +866,14 @@ function renderTaSectionTools(course, section, state) {
                       <div>
                         <strong>${escapeHtml(entry.name)}</strong>
                         <span>${escapeHtml(entry.course)} · ${escapeHtml(entry.need)}</span>
-                        <p class="student-question">${escapeHtml(entry.message || "No question details provided.")}</p>
-                        <p class="ai-summary">${escapeHtml(entry.ai?.summary || "")}</p>
+                        <div class="queue-content-block student-question-block">
+                          <p class="queue-content-label">Question details <span>Student provided</span></p>
+                          <p class="student-question">${escapeHtml(entry.message || "No question details provided.")}</p>
+                        </div>
+                        <div class="queue-content-block ai-summary-block">
+                          <p class="queue-content-label"><span class="ai-label-mark">AI</span> AI summary <span>Generated</span></p>
+                          <p class="ai-summary">${escapeHtml(entry.ai?.summary || "No AI summary available.")}</p>
+                        </div>
                       </div>
                       <span class="tag medium">${entry.ai?.estimatedHelpMinutes || 7} min</span>
                     </div>

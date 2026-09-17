@@ -19,7 +19,19 @@ app.include_router(routes_ta.router)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_ROOT = PROJECT_ROOT / "frontend"
-ALLOWED_FRONTEND_FILES = {"index.html", "student.html", "ta.html", "settings.html", "settings.js", "navigation.js", "app.js", "styles.css"}
+ALLOWED_FRONTEND_FILES = {
+    "index.html",
+    "student.html",
+    "ta.html",
+    "settings.html",
+    "demo.html",
+    "settings.js",
+    "navigation.js",
+    "app.js",
+    "demo.js",
+    "styles.css",
+    "demo.css",
+}
 NO_CACHE_HEADERS = {
     "Cache-Control": "no-store, no-cache, max-age=0, must-revalidate",
     "Pragma": "no-cache",

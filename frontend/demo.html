@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Interactive Demo | StudyLine</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="demo.css" />
+    <link rel="icon" href="assets/studyline_tab_icon.png" />
+  </head>
+  <body class="demo-page" data-page="demo">
+    <header class="demo-header">
+      <a class="brand demo-brand" href="demo.html" aria-label="StudyLine demo home">
+        <img class="brand-mark" src="assets/studyline_tab_icon.png" alt="" />
+        <span><small>Interactive demo</small><strong>StudyLine</strong></span>
+      </a>
+      <div class="demo-header-actions">
+        <span class="demo-mode-badge">Demo · sample data only</span>
+        <a class="secondary-action demo-home-link" href="index.html">Go to actual homepage</a>
+      </div>
+    </header>
+
+    <main class="demo-main">
+      <section class="demo-intro">
+        <div>
+          <p class="eyebrow">Recruiter quick tour</p>
+          <h1>Run an office-hours queue in under a minute.</h1>
+          <p>Switch perspectives to see how students join a section and how TAs use AI-assisted triage to help them efficiently. Everything here is simulated and resets instantly.</p>
+        </div>
+        <div class="demo-steps" aria-label="Suggested demo steps">
+          <span><strong>1</strong> Join as a student</span>
+          <span><strong>2</strong> Switch to TA view</span>
+          <span><strong>3</strong> Call and serve</span>
+        </div>
+      </section>
+
+      <section class="demo-toolbar" aria-label="Demo controls">
+        <div class="demo-view-switch" role="group" aria-label="Choose demo perspective">
+          <button class="demo-view-button active" type="button" data-demo-view="student">Student view</button>
+          <button class="demo-view-button" type="button" data-demo-view="ta">TA view</button>
+        </div>
+        <button id="resetDemo" class="secondary-action" type="button">Reset demo</button>
+      </section>
+
+      <div id="demoNotice" class="demo-notice" role="status" aria-live="polite"></div>
+      <section id="demoApp" class="demo-app" aria-live="polite"></section>
+    </main>
+
+    <script src="demo.js"></script>
+  </body>
+</html>

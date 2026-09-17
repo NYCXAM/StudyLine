@@ -141,6 +141,44 @@ def test_history_uses_short_expiration_date():
     assert "2026-10-01T15:30:00" not in html
 
 
+def test_ta_queue_distinguishes_question_details_from_ai_summary():
+    course = {"code": "CMSC 216", "title": "Computer Systems"}
+    section = {
+        "id": "section-1",
+        "title": "Max Cai's Office Hour",
+        "date": "2026-09-17",
+        "startTime": "14:00",
+        "endTime": "15:00",
+        "location": "IRB 1207",
+        "zoomLink": "",
+    }
+    state = {
+        "live": {"estimatedWaitMinutes": 8, "studentsWaiting": 1, "tasActive": 2, "averageHelpMinutes": 8},
+        "staff": {
+            "currentStudent": None,
+            "servedCount": 0,
+            "waitingEntries": [{
+                "position": 1,
+                "name": "Maya",
+                "course": "CMSC 216",
+                "need": "Debugging help",
+                "message": "My program segfaults after realloc.",
+                "ai": {"summary": "Likely memory-management bug.", "estimatedHelpMinutes": 10},
+            }],
+        },
+    }
+
+    html = render_frontend(
+        f"renderTaSectionTools({json.dumps(course)}, {json.dumps(section)}, {json.dumps(state)})",
+        page="ta",
+    )
+
+    assert "Question details" in html
+    assert "Student provided" in html
+    assert "AI summary" in html
+    assert "Generated" in html
+
+
 def test_next_student_notification_is_sent_once_per_queue_entry():
     expression = """
       queueToken = "queue-1";

@@ -64,5 +64,6 @@ traffic to a version that can connect to MongoDB.
 
 ## Main Pages
 
+- `frontend/demo.html`: self-contained recruiter demo of the student queue and TA workflow.
 - `frontend/student.html`: student login, course dashboard, shared-code join, live section queue.
 - `frontend/ta.html`: TA login, course dashboard, weekly section schedule, past participated sections, sharing, editing, live queue.

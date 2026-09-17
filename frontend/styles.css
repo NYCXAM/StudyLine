@@ -653,6 +653,57 @@ textarea {
   color: var(--ink);
 }
 
+.queue-content-block {
+  margin-top: 11px;
+  padding: 11px 12px;
+  border-radius: 8px;
+}
+
+.student-question-block {
+  border: 1px solid #d6dfe8;
+  background: #fff;
+}
+
+.ai-summary-block {
+  border: 1px solid #b8dac9;
+  background: #edf8f2;
+}
+
+.queue-content-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 6px;
+  color: #526477;
+  font-size: 0.7rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.staff-queue-item .queue-content-label span {
+  display: inline;
+  margin: 0;
+}
+
+.queue-content-label > span:last-child:not(.ai-label-mark) {
+  color: #73808d;
+  font-weight: 600;
+  text-transform: none;
+}
+
+.ai-label-mark {
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: #19704e;
+  color: #fff !important;
+  font-size: 0.62rem;
+}
+
+.queue-content-block .student-question,
+.queue-content-block .ai-summary {
+  margin: 0;
+}
+
 .ai-source {
   font-weight: 650;
 }
@@ -870,6 +921,13 @@ textarea {
 .role-card span:last-child {
   color: var(--muted);
   line-height: 1.45;
+}
+
+.role-card-demo {
+  min-height: 140px;
+  grid-column: 1 / -1;
+  background: #edf8f2;
+  border-color: #b8d8c8;
 }
 
 .role-icon {
