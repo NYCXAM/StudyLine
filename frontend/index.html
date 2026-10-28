@@ -8,37 +8,53 @@
     <link rel="icon" href="assets/studyline_tab_icon.png" />
   </head>
   <body data-page="home">
-    <main class="role-page">
-      <section class="role-hero">
-        <div class="brand">
-          <img class="brand-mark" src="assets/studyline_tab_icon.png" alt="" />
-          <div>
-            <p class="eyebrow">Office hours, organized</p>
-            <h1>StudyLine</h1>
+    <header class="home-header">
+      <a class="home-brand" href="index.html" aria-label="StudyLine home">
+        <img src="assets/studyline_tab_icon.png" alt="" />
+        <span>StudyLine</span>
+      </a>
+      <a class="home-demo-link" href="demo.html">Try the demo <span aria-hidden="true">↗</span></a>
+    </header>
+
+    <main class="home-main">
+      <section class="home-hero" aria-labelledby="home-title">
+        <div class="home-intro">
+          <p class="home-eyebrow"><span></span> Office hours without the guesswork</p>
+          <h1 id="home-title">Make room for <em>better questions.</em></h1>
+          <p class="home-intro-copy">A simpler way to find office hours, join the line, and make the most of your time together.</p>
+          <a class="home-text-link" href="#how-it-works">See how it works <span aria-hidden="true">↓</span></a>
+        </div>
+
+        <div class="home-chooser" aria-labelledby="home-chooser-title">
+          <div class="home-chooser-heading">
+            <p class="home-eyebrow">Get started</p>
+            <h2 id="home-chooser-title">Choose your workspace.</h2>
+            <p>Pick the view that fits your role.</p>
           </div>
-        </div>
-        <div>
-          <p class="eyebrow">Choose a workspace</p>
-          <h2>A little less waiting. A lot more learning.</h2>
-          <p class="role-copy">Find your office hours, get in line, and make time for the questions that matter.</p>
-        </div>
-        <div class="role-grid">
-          <a class="role-card" href="student.html">
-            <span class="role-icon">S</span>
-            <strong>Student</strong>
-            <span>Sign in, join shared courses, and enter the live queue for an office-hour section.</span>
+          <a class="home-role" href="student.html">
+            <span class="home-role-number">01</span>
+            <span class="home-role-content"><strong>Student</strong><span>Find office hours and get in line.</span></span>
+            <span class="home-role-arrow" aria-hidden="true">↗</span>
           </a>
-          <a class="role-card" href="ta.html">
-            <span class="role-icon">TA</span>
-            <strong>TA / Staff</strong>
-            <span>Sign in, manage courses, create sections, share access, and call the next student.</span>
+          <a class="home-role" href="ta.html">
+            <span class="home-role-number">02</span>
+            <span class="home-role-content"><strong>TA / Staff</strong><span>Manage your schedule and help students.</span></span>
+            <span class="home-role-arrow" aria-hidden="true">↗</span>
           </a>
-          <a class="role-card role-card-demo" href="demo.html">
-            <span class="role-icon">▶</span>
-            <strong>Try the interactive demo</strong>
-            <span>Explore the complete student and TA workflow with sample data—no sign-in required.</span>
-          </a>
+          <p class="home-chooser-note">Want a closer look? <a href="demo.html">Explore the interactive demo</a></p>
         </div>
+      </section>
+
+      <section class="home-how" id="how-it-works" aria-labelledby="home-how-title">
+        <div class="home-how-heading">
+          <p class="home-eyebrow">A clearer path to help</p>
+          <h2 id="home-how-title">Office hours, in three steps.</h2>
+        </div>
+        <ol class="home-steps">
+          <li><span>01</span><div><h3>Find a session</h3><p>Choose your course and available office hours.</p></div></li>
+          <li><span>02</span><div><h3>Join the line</h3><p>Get in the queue and keep track of your place.</p></div></li>
+          <li><span>03</span><div><h3>Get support</h3><p>Connect with staff when it is your turn.</p></div></li>
+        </ol>
       </section>
     </main>
   </body>
