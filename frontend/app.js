@@ -220,7 +220,7 @@ function renderLogin(error = "") {
         <div>
           <p class="eyebrow">Google Login</p>
           <h3>Continue with your school Google account</h3>
-          <p class="muted">StudyLine verifies the Google ID token on the Python backend before creating your app session.</p>
+          <p class="muted">${role === "ta" ? "Organize your courses, schedule office hours, and help the next student in line." : "Join your courses, find upcoming office hours, and keep track of your place in line."}</p>
         </div>
         <div id="googleSignInButton"></div>
         ${
@@ -316,27 +316,53 @@ async function renderDashboard(message = "") {
   renderShell(
     role === "ta" ? "Your teaching dashboard." : "Your courses and office hours.",
     `
-      <section class="dashboard-actions">
-        <form id="shareJoinForm" class="panel inline-form">
-          <label>Enter share code<input name="code" type="text" placeholder="${role === "ta" ? "T-C-ABC123 or T-S-ABC123" : "S-C-ABC123 or S-S-ABC123"}" /></label>
-          <button class="primary-action" type="submit">Join</button>
-        </form>
-        ${
-          role === "ta"
-            ? `<form id="courseForm" class="panel inline-form">
-                <label>Course code<input name="code" type="text" placeholder="CS 101" required /></label>
-                <label>Title<input name="title" type="text" placeholder="Intro Computer Science" /></label>
-                <button class="secondary-action" type="submit">Create Course</button>
-              </form>`
-            : ""
-        }
-      </section>
-      ${message ? `<p class="notice">${escapeHtml(message)}</p>` : ""}
-      <section class="course-list">
-        ${courses.length ? courses.map(renderCourseCard).join("") : `<div class="panel empty-state">No courses yet. Use a share code to join one.</div>`}
-      </section>
+      ${message ? `<p class="notice" role="status">${escapeHtml(message)}</p>` : ""}
+      <div class="dashboard-layout">
+        <div class="dashboard-main">
+          <section aria-labelledby="coursesHeading">
+            <div class="directory-heading">
+              <div><p class="eyebrow">Your workspace</p><h3 id="coursesHeading">Courses <span class="count-label">${courses.length}</span></h3></div>
+              <a class="text-link" href="#joinCourseTools">Join a course ↓</a>
+            </div>
+            <div class="course-list course-directory">
+              ${courses.length ? courses.map(renderCourseCard).join("") : `<div class="panel empty-state"><h3>Your first course starts here.</h3><p>Ask your instructor for a share code, then enter it in the Join a course panel.</p></div>`}
+            </div>
+          </section>
+          <section class="upcoming-overview" aria-labelledby="upcomingHeading">
+            <div class="directory-heading"><div><p class="eyebrow">Plan your next visit</p><h3 id="upcomingHeading">Coming up</h3></div></div>
+            <div class="upcoming-list">${renderUpcomingOverview(courses)}</div>
+          </section>
+        </div>
+        <aside class="dashboard-rail" id="joinCourseTools" aria-label="Course actions">
+          <section class="panel join-course-panel">
+            <p class="eyebrow">Have a share code?</p>
+            <h3>Join a course</h3>
+            <p class="muted small">Use the code shared by your instructor or teaching team.</p>
+            <form id="shareJoinForm" class="stack-form">
+              <label>Share code<input name="code" type="text" placeholder="${role === "ta" ? "T-C-ABC123 or T-S-ABC123" : "S-C-ABC123 or S-S-ABC123"}" required /></label>
+              <button class="primary-action" type="submit">Join workspace</button>
+            </form>
+          </section>
+          ${role === "ta" ? `<details class="panel create-course-panel">
+            <summary>Create a course</summary>
+            <p class="muted small">Start a new space for your class.</p>
+            <form id="courseForm" class="stack-form">
+              <label>Course code<input name="code" type="text" placeholder="CS 101" required /></label>
+              <label>Title<input name="title" type="text" placeholder="Intro Computer Science" /></label>
+              <button class="secondary-action" type="submit">Create Course</button>
+            </form>
+          </details>` : `<div class="rail-help"><p class="eyebrow">Getting started</p><p>Open a course to see office hours, choose a section, and join its queue.</p></div>`}
+        </aside>
+      </div>
     `
   );
+
+  document.querySelector('a[href="#joinCourseTools"]').addEventListener("click", (event) => {
+    event.preventDefault();
+    const codeInput = document.querySelector('#shareJoinForm input[name="code"]');
+    codeInput.focus({ preventScroll: true });
+    codeInput.scrollIntoView({ block: "center" });
+  });
 
   document.querySelector("#shareJoinForm").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -445,18 +471,32 @@ async function renderDashboard(message = "") {
 }
 
 function renderCourseCard(course) {
+  const count = course.upcomingSections?.length || 0;
   return `
-    <article class="panel course-card course-card-summary">
-      <div class="section-heading">
-        <div>
-          <p class="eyebrow">${escapeHtml(course.code)}</p>
-          <h3>${escapeHtml(course.title || course.code)}</h3>
-          <p class="muted">${course.upcomingSections?.length || 0} upcoming office-hour section${course.upcomingSections?.length === 1 ? "" : "s"}</p>
-        </div>
-        <button class="primary-action" data-open-course="${course.id}" type="button">Open course</button>
+    <article class="panel course-card course-card-summary directory-row">
+      <div class="course-code-badge">${escapeHtml(course.code)}</div>
+      <div class="course-row-copy">
+        <h3>${escapeHtml(course.title || course.code)}</h3>
+        <p class="muted">${count ? `${count} upcoming office-hour section${count === 1 ? "" : "s"}` : "No office hours scheduled yet"}</p>
       </div>
+      <button class="secondary-action" data-open-course="${escapeHtml(course.id)}" type="button" aria-label="Open ${escapeHtml(course.code)}">Open course <span aria-hidden="true">→</span></button>
     </article>
   `;
+}
+
+function renderUpcomingOverview(courses) {
+  const now = new Date();
+  const upcoming = courses.flatMap((course) => (course.upcomingSections || []).map((section) => ({ course, section })))
+    .filter(({ section }) => new Date(`${section.date}T${section.endTime}`) > now)
+    .sort((a, b) => `${a.section.date}T${a.section.startTime}`.localeCompare(`${b.section.date}T${b.section.startTime}`))
+    .slice(0, 3);
+  if (!upcoming.length) return '<p class="empty-agenda">No upcoming office hours. Check your courses for schedule updates.</p>';
+  return upcoming.map(({ course, section }) => `
+    <button class="upcoming-row" data-open-section="${escapeHtml(section.id)}" type="button">
+      <span class="upcoming-date">${escapeHtml(formatDate(section.date))}</span>
+      <span><strong>${escapeHtml(course.code)} · ${escapeHtml(section.title || "Office Hour")}</strong><span class="muted">${escapeHtml(formatTimeRange(section))} · ${escapeHtml(section.location || "Location TBD")}</span></span>
+      <span class="upcoming-arrow" aria-hidden="true">→</span>
+    </button>`).join("");
 }
 
 async function renderCourseView(courseId, message = "") {
@@ -475,26 +515,32 @@ async function renderCourseView(courseId, message = "") {
     `
       <button id="backToCourses" class="secondary-action back-button" type="button">Back to courses</button>
       ${message ? `<p class="notice">${escapeHtml(message)}</p>` : ""}
-      ${
-        role === "ta"
-          ? `<section class="course-tools">
-              <article class="panel course-share-card">${renderShareCoursePanel(course)}</article>
-              <article class="panel add-section-panel">${renderAddSectionForm(course)}</article>
-            </section>`
-          : ""
-      }
-      <article class="panel course-schedule-panel">
-        <div class="section-heading">
-          <div><p class="eyebrow">Schedule</p><h3>Upcoming office hours</h3></div>
-          <span class="forecast-note">${course.upcomingSections?.length || 0} scheduled</span>
+      <div class="course-layout">
+        <div class="course-main">
+          <article class="panel course-schedule-panel">
+            <div class="section-heading">
+              <div><p class="eyebrow">Schedule</p><h3>Weekly office hours</h3></div>
+              <span class="forecast-note">${course.upcomingSections?.length || 0} scheduled</span>
+            </div>
+            <div id="courseCalendar">${renderWeekSchedule(course.upcomingSections || [])}</div>
+          </article>
+          <details class="panel course-past-panel">
+            <summary>Past office hours <span class="count-label">${course.pastSections?.length || 0}</span></summary>
+            <div class="past-list">${renderPastSections(course.pastSections || [])}</div>
+          </details>
         </div>
-        <div id="courseCalendar">${renderWeekSchedule(course.upcomingSections || [])}</div>
-        <details class="schedule-details"><summary>All upcoming sections${role === "ta" ? " · edit and manage" : ""}</summary><div class="schedule-agenda">${(course.upcomingSections || []).map((section) => renderSectionMini(section, true)).join("") || `<p class="muted">No sections scheduled yet.</p>`}</div></details>
-      </article>
-      <article class="panel course-past-panel">
-        <div class="section-heading"><div><p class="eyebrow">Past sections</p><h3>History</h3></div></div>
-        <div class="past-list">${renderPastSections(course.pastSections || [])}</div>
-      </article>
+        <aside class="course-rail" aria-label="Course information and tools">
+          <section class="panel course-agenda-panel">
+            <div><p class="eyebrow">${escapeHtml(course.code)}</p><h3>Upcoming sections</h3></div>
+            <p class="muted small">Choose a section to view its live queue.</p>
+            <div class="schedule-agenda primary-agenda">${(course.upcomingSections || []).map((section) => renderSectionMini(section, true)).join("") || '<p class="empty-agenda">No office hours scheduled yet.</p>'}</div>
+          </section>
+          ${role === "ta" ? `
+            <article class="panel add-section-panel">${renderAddSectionForm(course)}</article>
+            <article class="panel course-share-card">${renderShareCoursePanel(course)}</article>
+          ` : ""}
+        </aside>
+      </div>
     `
   );
 
@@ -816,20 +862,6 @@ async function renderSectionView(sectionId) {
 function renderTaSectionTools(course, section, state) {
   const current = state.staff.currentStudent;
   return `
-    <section class="two-column">
-      <article class="panel">
-        <p class="panel-label">Course</p>
-        <form id="courseEditForm" class="stack-form">
-          <label>Course code<input name="code" type="text" value="${escapeHtml(course.code)}" /></label>
-          <label>Title<input name="title" type="text" value="${escapeHtml(course.title || "")}" /></label>
-          <button class="secondary-action" type="submit">Update Course</button>
-        </form>
-      </article>
-      <article class="panel">
-        <p class="panel-label">Section Details</p>
-        ${renderEditSectionForm(section)}
-      </article>
-    </section>
     <section class="hero-grid">
       <article class="panel crowd-panel">
         <p class="panel-label">Current Crowd</p>
@@ -884,6 +916,25 @@ function renderTaSectionTools(course, section, state) {
         }
       </div>
     </section>
+    <details class="panel section-settings">
+      <summary>Edit course &amp; section details</summary>
+      <p class="muted small">Update course information, times, and meeting links.</p>
+    <section class="two-column">
+      <article class="panel">
+        <p class="panel-label">Course</p>
+        <form id="courseEditForm" class="stack-form">
+          <label>Course code<input name="code" type="text" value="${escapeHtml(course.code)}" /></label>
+          <label>Title<input name="title" type="text" value="${escapeHtml(course.title || "")}" /></label>
+          <button class="secondary-action" type="submit">Update Course</button>
+        </form>
+      </article>
+      <article class="panel">
+        <p class="panel-label">Section Details</p>
+        ${renderEditSectionForm(section)}
+      </article>
+    </section>
+
+    </details>
   `;
 }
 
