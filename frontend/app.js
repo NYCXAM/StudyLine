@@ -32,6 +32,7 @@ let currentUser = readStoredUser(userKey);
 let queueToken = window.localStorage.getItem("studyline_queue_token");
 let queueNotificationEnabled = window.localStorage.getItem("studyline_queue_notifications") === "true";
 let notifiedQueueToken = window.localStorage.getItem("studyline_notified_queue_token");
+let calledQueueToken = window.localStorage.getItem("studyline_called_queue_token");
 let renderedQueueSignature = "";
 let queuePollInFlight = false;
 let activeSectionId = new URLSearchParams(window.location.search).get("section") || window.localStorage.getItem(`${role}_active_section`);
@@ -50,9 +51,49 @@ const appRoot = document.querySelector("#appRoot");
 function headers() {
   return {
     "Content-Type": "application/json",
+    "X-Local-Date": localDateKey(new Date()),
     ...(authToken ? { "X-User-Token": authToken } : {}),
     ...(queueToken ? { "X-Queue-Token": queueToken } : {}),
   };
+}
+
+function showActionError(message) {
+  let banner = document.querySelector("#actionErrorBanner");
+  if (!banner && appRoot) {
+    banner = document.createElement("p");
+    banner.id = "actionErrorBanner";
+    banner.className = "form-error";
+    banner.setAttribute("role", "alert");
+    const topbar = appRoot.querySelector(".topbar");
+    if (topbar && topbar.nextSibling) {
+      appRoot.insertBefore(banner, topbar.nextSibling);
+    } else {
+      appRoot.prepend(banner);
+    }
+  }
+  if (banner) {
+    banner.textContent = message;
+  }
+}
+
+async function runAction(element, callback) {
+  const button = element?.tagName === "FORM"
+    ? element.querySelector?.('button[type="submit"]') || element
+    : element;
+  if (button && "disabled" in button) {
+    if (button.disabled) return;
+    button.disabled = true;
+  }
+  document.querySelector("#actionErrorBanner")?.remove?.();
+  try {
+    await callback();
+  } catch (error) {
+    showActionError(error?.message || "Something went wrong. Please try again.");
+  } finally {
+    if (button && "disabled" in button) {
+      button.disabled = false;
+    }
+  }
 }
 
 async function api(path, options = {}) {
@@ -204,11 +245,13 @@ async function signOut() {
   currentUser = null;
   queueToken = null;
   notifiedQueueToken = null;
+  calledQueueToken = null;
   renderedQueueSignature = "";
   window.localStorage.removeItem(tokenKey);
   window.localStorage.removeItem(userKey);
   window.localStorage.removeItem("studyline_queue_token");
   window.localStorage.removeItem("studyline_notified_queue_token");
+  window.localStorage.removeItem("studyline_called_queue_token");
   renderLogin();
 }
 
@@ -280,9 +323,17 @@ window.handleGoogleCredential = async function handleGoogleCredential(response) 
 async function afterLogin() {
   document.body.classList.toggle("compact-mode", Boolean(currentUser?.preferences?.compactMode));
   if (pendingShareCode) {
-    await joinShareCode(pendingShareCode, true);
+    const codeToJoin = pendingShareCode;
     pendingShareCode = "";
-    return;
+    try {
+      await joinShareCode(codeToJoin, true);
+      return;
+    } catch (error) {
+      history.replaceState(null, "", `${role}.html`);
+      await renderDashboard();
+      showActionError(error.message);
+      return;
+    }
   }
   if (activeSectionId) {
     await renderSectionView(activeSectionId);
@@ -366,18 +417,22 @@ async function renderDashboard(message = "") {
 
   document.querySelector("#shareJoinForm").addEventListener("submit", async (event) => {
     event.preventDefault();
-    const code = new FormData(event.currentTarget).get("code");
-    await joinShareCode(code);
+    const formElement = event.currentTarget;
+    const code = new FormData(formElement).get("code");
+    await runAction(formElement, () => joinShareCode(code));
   });
 
   document.querySelector("#courseForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await api("/api/courses", {
-      method: "POST",
-      body: { code: form.get("code"), title: form.get("title") },
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    await runAction(formElement, async () => {
+      await api("/api/courses", {
+        method: "POST",
+        body: { code: form.get("code"), title: form.get("title") },
+      });
+      await renderDashboard("Course added.");
     });
-    await renderDashboard("Course added.");
   });
 
   document.querySelectorAll("[data-open-course]").forEach((button) => {
@@ -396,69 +451,81 @@ async function renderDashboard(message = "") {
 
   document.querySelectorAll("[data-save-section]").forEach((button) => {
     button.addEventListener("click", async () => {
-      await api(`/api/sections/${button.dataset.saveSection}`, {
-        method: "PATCH",
-        body: { saved: true },
+      await runAction(button, async () => {
+        await api(`/api/sections/${button.dataset.saveSection}`, {
+          method: "PATCH",
+          body: { saved: true },
+        });
+        await renderDashboard("Past section saved permanently.");
       });
-      await renderDashboard("Past section saved permanently.");
     });
   });
 
   document.querySelectorAll("[data-delete-section]").forEach((button) => {
     button.addEventListener("click", async () => {
-      await api(`/api/sections/${button.dataset.deleteSection}`, { method: "DELETE" });
-      await renderDashboard("Section deleted.");
+      await runAction(button, async () => {
+        await api(`/api/sections/${button.dataset.deleteSection}`, { method: "DELETE" });
+        await renderDashboard("Section deleted.");
+      });
     });
   });
 
   document.querySelectorAll("[data-course-section-form]").forEach((form) => {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const data = new FormData(event.currentTarget);
-      const result = await api("/api/sections", {
-        method: "POST",
-        body: {
-          courseId: form.dataset.courseSectionForm,
-          title: data.get("title"),
-          date: data.get("date"),
-          startTime: data.get("startTime"),
-          endTime: data.get("endTime"),
-          location: data.get("location"),
-          zoomLink: data.get("zoomLink"),
-        },
+      const formElement = event.currentTarget;
+      const data = new FormData(formElement);
+      await runAction(formElement, async () => {
+        const result = await api("/api/sections", {
+          method: "POST",
+          body: {
+            courseId: form.dataset.courseSectionForm,
+            title: data.get("title"),
+            date: data.get("date"),
+            startTime: data.get("startTime"),
+            endTime: data.get("endTime"),
+            location: data.get("location"),
+            zoomLink: data.get("zoomLink"),
+          },
+        });
+        setActiveSection(result.section.id);
+        await renderSectionView(result.section.id);
       });
-      setActiveSection(result.section.id);
-      await renderSectionView(result.section.id);
     });
   });
 
   document.querySelectorAll("[data-edit-section-form]").forEach((form) => {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const data = new FormData(event.currentTarget);
-      await api(`/api/sections/${form.dataset.editSectionForm}`, {
-        method: "PATCH",
-        body: {
-          title: data.get("title"),
-          date: data.get("date"),
-          startTime: data.get("startTime"),
-          endTime: data.get("endTime"),
-          location: data.get("location"),
-          zoomLink: data.get("zoomLink"),
-          highlightChange: data.get("highlightChange") === "on",
-        },
+      const formElement = event.currentTarget;
+      const data = new FormData(formElement);
+      await runAction(formElement, async () => {
+        await api(`/api/sections/${form.dataset.editSectionForm}`, {
+          method: "PATCH",
+          body: {
+            title: data.get("title"),
+            date: data.get("date"),
+            startTime: data.get("startTime"),
+            endTime: data.get("endTime"),
+            location: data.get("location"),
+            zoomLink: data.get("zoomLink"),
+            highlightChange: data.get("highlightChange") === "on",
+          },
+        });
+        await renderDashboard("Section updated.");
       });
-      await renderDashboard("Section updated.");
     });
   });
 
   document.querySelectorAll("[data-cancel-section]").forEach((button) => {
     button.addEventListener("click", async () => {
-      await api(`/api/sections/${button.dataset.cancelSection}`, {
-        method: "PATCH",
-        body: { status: "cancelled", highlightChange: true },
+      await runAction(button, async () => {
+        await api(`/api/sections/${button.dataset.cancelSection}`, {
+          method: "PATCH",
+          body: { status: "cancelled", highlightChange: true },
+        });
+        await renderDashboard("Section cancelled.");
       });
-      await renderDashboard("Section cancelled.");
     });
   });
 
@@ -581,43 +648,55 @@ async function renderCourseView(courseId, message = "") {
   });
   document.querySelectorAll("[data-save-section]").forEach((button) => {
     button.addEventListener("click", async () => {
-      await api(`/api/sections/${button.dataset.saveSection}`, { method: "PATCH", body: { saved: true } });
-      await renderCourseView(course.id, "Past section saved permanently.");
+      await runAction(button, async () => {
+        await api(`/api/sections/${button.dataset.saveSection}`, { method: "PATCH", body: { saved: true } });
+        await renderCourseView(course.id, "Past section saved permanently.");
+      });
     });
   });
   document.querySelectorAll("[data-delete-section]").forEach((button) => {
     button.addEventListener("click", async () => {
-      await api(`/api/sections/${button.dataset.deleteSection}`, { method: "DELETE" });
-      await renderCourseView(course.id, "Section deleted.");
+      await runAction(button, async () => {
+        await api(`/api/sections/${button.dataset.deleteSection}`, { method: "DELETE" });
+        await renderCourseView(course.id, "Section deleted.");
+      });
     });
   });
   document.querySelectorAll("[data-cancel-section]").forEach((button) => {
     button.addEventListener("click", async () => {
-      await api(`/api/sections/${button.dataset.cancelSection}`, { method: "PATCH", body: { status: "cancelled", highlightChange: true } });
-      await renderCourseView(course.id, "Section cancelled.");
+      await runAction(button, async () => {
+        await api(`/api/sections/${button.dataset.cancelSection}`, { method: "PATCH", body: { status: "cancelled", highlightChange: true } });
+        await renderCourseView(course.id, "Section cancelled.");
+      });
     });
   });
   document.querySelectorAll("[data-edit-section-form]").forEach((form) => {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const data = new FormData(event.currentTarget);
-      await api(`/api/sections/${form.dataset.editSectionForm}`, {
-        method: "PATCH",
-        body: { title: data.get("title"), date: data.get("date"), startTime: data.get("startTime"), endTime: data.get("endTime"), location: data.get("location"), zoomLink: data.get("zoomLink"), highlightChange: data.get("highlightChange") === "on" },
+      const formElement = event.currentTarget;
+      const data = new FormData(formElement);
+      await runAction(formElement, async () => {
+        await api(`/api/sections/${form.dataset.editSectionForm}`, {
+          method: "PATCH",
+          body: { title: data.get("title"), date: data.get("date"), startTime: data.get("startTime"), endTime: data.get("endTime"), location: data.get("location"), zoomLink: data.get("zoomLink"), highlightChange: data.get("highlightChange") === "on" },
+        });
+        await renderCourseView(course.id, "Section updated.");
       });
-      await renderCourseView(course.id, "Section updated.");
     });
   });
   document.querySelectorAll("[data-course-section-form]").forEach((form) => {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const data = new FormData(event.currentTarget);
-      const result = await api("/api/sections", {
-        method: "POST",
-        body: { courseId: course.id, title: data.get("title"), date: data.get("date"), startTime: data.get("startTime"), endTime: data.get("endTime"), location: data.get("location"), zoomLink: data.get("zoomLink") },
+      const formElement = event.currentTarget;
+      const data = new FormData(formElement);
+      await runAction(formElement, async () => {
+        const result = await api("/api/sections", {
+          method: "POST",
+          body: { courseId: course.id, title: data.get("title"), date: data.get("date"), startTime: data.get("startTime"), endTime: data.get("endTime"), location: data.get("location"), zoomLink: data.get("zoomLink") },
+        });
+        setActiveSection(result.section.id);
+        await renderSectionView(result.section.id);
       });
-      setActiveSection(result.section.id);
-      await renderSectionView(result.section.id);
     });
   });
 }
@@ -754,7 +833,7 @@ function renderPastSections(sections) {
 }
 
 function renderAddSectionForm(course) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateKey(new Date());
   return `
     <details class="add-section">
       <summary>Add New Section</summary>
@@ -981,86 +1060,112 @@ function renderStudentSectionTools(course, section, state) {
 function bindSectionActionForms(course, section) {
   document.querySelector("#courseEditForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    await api(`/api/courses/${course.id}`, {
-      method: "PATCH",
-      body: { code: data.get("code"), title: data.get("title") },
-    });
-    await renderSectionView(section.id);
-  });
-
-  document.querySelectorAll("[data-edit-section-form]").forEach((form) => {
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const data = new FormData(event.currentTarget);
-      await api(`/api/sections/${form.dataset.editSectionForm}`, {
+    const formElement = event.currentTarget;
+    const data = new FormData(formElement);
+    await runAction(formElement, async () => {
+      await api(`/api/courses/${course.id}`, {
         method: "PATCH",
-        body: {
-          title: data.get("title"),
-          date: data.get("date"),
-          startTime: data.get("startTime"),
-          endTime: data.get("endTime"),
-          location: data.get("location"),
-          zoomLink: data.get("zoomLink"),
-          highlightChange: data.get("highlightChange") === "on",
-        },
+        body: { code: data.get("code"), title: data.get("title") },
       });
       await renderSectionView(section.id);
     });
   });
 
-  document.querySelector("#callNext")?.addEventListener("click", async () => {
-    await api(`/api/staff/call-next?slot_id=${encodeURIComponent(section.id)}`, { method: "POST" });
-    await renderSectionView(section.id);
+  document.querySelectorAll("[data-edit-section-form]").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const formElement = event.currentTarget;
+      const data = new FormData(formElement);
+      await runAction(formElement, async () => {
+        await api(`/api/sections/${form.dataset.editSectionForm}`, {
+          method: "PATCH",
+          body: {
+            title: data.get("title"),
+            date: data.get("date"),
+            startTime: data.get("startTime"),
+            endTime: data.get("endTime"),
+            location: data.get("location"),
+            zoomLink: data.get("zoomLink"),
+            highlightChange: data.get("highlightChange") === "on",
+          },
+        });
+        await renderSectionView(section.id);
+      });
+    });
   });
 
-  document.querySelector("#markServed")?.addEventListener("click", async () => {
-    await api(`/api/staff/serve-current?slot_id=${encodeURIComponent(section.id)}`, { method: "POST" });
-    await renderSectionView(section.id);
+  const callNextButton = document.querySelector("#callNext");
+  callNextButton?.addEventListener("click", async () => {
+    await runAction(callNextButton, async () => {
+      await api(`/api/staff/call-next?slot_id=${encodeURIComponent(section.id)}`, { method: "POST" });
+      await renderSectionView(section.id);
+    });
+  });
+
+  const markServedButton = document.querySelector("#markServed");
+  markServedButton?.addEventListener("click", async () => {
+    await runAction(markServedButton, async () => {
+      await api(`/api/staff/serve-current?slot_id=${encodeURIComponent(section.id)}`, { method: "POST" });
+      await renderSectionView(section.id);
+    });
   });
 
   document.querySelector("#queueForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    queueNotificationEnabled = data.get("notifyWhenNext") === "on";
-    window.localStorage.setItem("studyline_queue_notifications", String(queueNotificationEnabled));
-    const permissionRequest = queueNotificationEnabled && "Notification" in window && Notification.permission === "default"
-      ? Notification.requestPermission()
-      : Promise.resolve("Notification" in window ? Notification.permission : "unsupported");
-    const result = await api("/api/queue", {
-      method: "POST",
-      body: {
-        slotId: section.id,
-        course: course.code,
-        name: data.get("name"),
-        need: data.get("need"),
-        message: data.get("message"),
-      },
+    const formElement = event.currentTarget;
+    const data = new FormData(formElement);
+    await runAction(formElement, async () => {
+      queueNotificationEnabled = data.get("notifyWhenNext") === "on";
+      window.localStorage.setItem("studyline_queue_notifications", String(queueNotificationEnabled));
+      const permissionRequest = queueNotificationEnabled && "Notification" in window && Notification.permission === "default"
+        ? Notification.requestPermission()
+        : Promise.resolve("Notification" in window ? Notification.permission : "unsupported");
+      const result = await api("/api/queue", {
+        method: "POST",
+        body: {
+          slotId: section.id,
+          course: course.code,
+          name: data.get("name"),
+          need: data.get("need"),
+          message: data.get("message"),
+        },
+      });
+      queueToken = result.queueToken;
+      notifiedQueueToken = null;
+      calledQueueToken = null;
+      window.localStorage.setItem("studyline_queue_token", queueToken);
+      window.localStorage.removeItem("studyline_notified_queue_token");
+      window.localStorage.removeItem("studyline_called_queue_token");
+      await permissionRequest;
+      await renderSectionView(section.id);
     });
-    queueToken = result.queueToken;
-    notifiedQueueToken = null;
-    window.localStorage.setItem("studyline_queue_token", queueToken);
-    await permissionRequest;
-    await renderSectionView(section.id);
   });
 
-  document.querySelector("#leaveLine")?.addEventListener("click", async () => {
-    await api(`/api/queue/me?slot_id=${encodeURIComponent(section.id)}`, { method: "DELETE" });
-    queueToken = null;
-    notifiedQueueToken = null;
-    window.localStorage.removeItem("studyline_queue_token");
-    window.localStorage.removeItem("studyline_notified_queue_token");
-    await renderSectionView(section.id);
+  const leaveLineButton = document.querySelector("#leaveLine");
+  leaveLineButton?.addEventListener("click", async () => {
+    await runAction(leaveLineButton, async () => {
+      await api(`/api/queue/me?slot_id=${encodeURIComponent(section.id)}`, { method: "DELETE" });
+      queueToken = null;
+      notifiedQueueToken = null;
+      calledQueueToken = null;
+      window.localStorage.removeItem("studyline_queue_token");
+      window.localStorage.removeItem("studyline_notified_queue_token");
+      window.localStorage.removeItem("studyline_called_queue_token");
+      await renderSectionView(section.id);
+    });
   });
 }
 
 function queueStateSignature(state) {
   return JSON.stringify([
-    state.queue.status,
-    state.queue.position,
-    state.queue.personalWaitMinutes,
-    state.live.studentsWaiting,
-    state.live.estimatedWaitMinutes,
+    state.queue?.status,
+    state.queue?.position,
+    state.queue?.personalWaitMinutes,
+    state.live?.studentsWaiting,
+    state.live?.estimatedWaitMinutes,
+    state.staff?.servedCount ?? 0,
+    state.staff?.currentStudent?.id ?? null,
+    (state.staff?.waitingEntries || []).map((entry) => entry.id),
   ]);
 }
 
@@ -1069,43 +1174,77 @@ function maybeNotifyNextStudent(course, section, state) {
     role !== "student" ||
     !queueToken ||
     !queueNotificationEnabled ||
-    state.queue.status !== "next" ||
-    notifiedQueueToken === queueToken ||
     !("Notification" in window) ||
     Notification.permission !== "granted"
   ) return;
 
-  new Notification("You’re next in line", {
-    body: `${course.code}: ${section.title || "Office Hour"}`,
-    tag: `studyline-next-${queueToken}`,
-  });
-  notifiedQueueToken = queueToken;
-  window.localStorage.setItem("studyline_notified_queue_token", queueToken);
+  if (state.queue?.status === "next" && notifiedQueueToken !== queueToken) {
+    new Notification("You’re next in line", {
+      body: `${course.code}: ${section.title || "Office Hour"}`,
+      tag: `studyline-next-${queueToken}`,
+    });
+    notifiedQueueToken = queueToken;
+    window.localStorage.setItem("studyline_notified_queue_token", queueToken);
+  } else if (state.queue?.status === "called" && calledQueueToken !== queueToken) {
+    new Notification("It’s your turn", {
+      body: `${course.code}: ${section.title || "Office Hour"}`,
+      tag: `studyline-called-${queueToken}`,
+    });
+    calledQueueToken = queueToken;
+    window.localStorage.setItem("studyline_called_queue_token", queueToken);
+  }
+}
+
+function isEditingSectionForm() {
+  const active = document.activeElement;
+  if (active && appRoot?.contains?.(active) && ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName)) {
+    return true;
+  }
+  const settingsDetails = document.querySelector("details.section-settings");
+  return Boolean(settingsDetails?.open);
 }
 
 async function pollQueueState() {
-  if (role !== "student" || !queueToken || queuePollInFlight) return;
-  queuePollInFlight = true;
-  try {
-    const queue = await api("/api/queue/me");
-    if (queue.status === "not_joined") {
-      queueToken = null;
-      notifiedQueueToken = null;
-      window.localStorage.removeItem("studyline_queue_token");
-      window.localStorage.removeItem("studyline_notified_queue_token");
-      if (activeSectionId) await renderSectionView(activeSectionId);
-      return;
+  if (queuePollInFlight) return;
+  if (role === "student" && queueToken) {
+    queuePollInFlight = true;
+    try {
+      const queue = await api("/api/queue/me");
+      if (queue.status === "not_joined") {
+        queueToken = null;
+        notifiedQueueToken = null;
+        calledQueueToken = null;
+        window.localStorage.removeItem("studyline_queue_token");
+        window.localStorage.removeItem("studyline_notified_queue_token");
+        window.localStorage.removeItem("studyline_called_queue_token");
+        if (activeSectionId && !isEditingSectionForm()) await renderSectionView(activeSectionId);
+        return;
+      }
+      const sectionId = queue.slot_id || activeSectionId;
+      if (!sectionId) return;
+      const data = await api(`/api/sections/${sectionId}/state`);
+      const signature = queueStateSignature(data.state);
+      maybeNotifyNextStudent(data.course, data.section, data.state);
+      if (sectionId === activeSectionId && signature !== renderedQueueSignature && !isEditingSectionForm()) {
+        await renderSectionView(sectionId);
+      }
+    } finally {
+      queuePollInFlight = false;
     }
-    const sectionId = queue.slot_id || activeSectionId;
-    if (!sectionId) return;
-    const data = await api(`/api/sections/${sectionId}/state`);
-    const signature = queueStateSignature(data.state);
-    maybeNotifyNextStudent(data.course, data.section, data.state);
-    if (sectionId === activeSectionId && signature !== renderedQueueSignature) {
-      await renderSectionView(sectionId);
+    return;
+  }
+
+  if (activeSectionId && authToken && (role === "ta" || role === "student")) {
+    queuePollInFlight = true;
+    try {
+      const data = await api(`/api/sections/${activeSectionId}/state`);
+      const signature = queueStateSignature(data.state);
+      if (signature !== renderedQueueSignature && !isEditingSectionForm()) {
+        await renderSectionView(activeSectionId);
+      }
+    } finally {
+      queuePollInFlight = false;
     }
-  } finally {
-    queuePollInFlight = false;
   }
 }
 
@@ -1125,7 +1264,7 @@ function updateClock() {
 async function boot() {
   updateClock();
   setInterval(updateClock, 30 * 1000);
-  setInterval(() => pollQueueState().catch(() => {}), 15 * 1000);
+  setInterval(() => pollQueueState().catch(() => {}), 5 * 1000);
   if (!["student", "ta"].includes(role)) {
     return;
   }

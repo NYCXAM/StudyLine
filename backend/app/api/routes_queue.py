@@ -32,9 +32,13 @@ class CreateQueueEntryRequest(BaseModel):
         allow_population_by_field_name = True
 
 
-def _state(student_id: Optional[str] = None, slot_id: Optional[str] = None):
+def _state(
+    student_id: Optional[str] = None,
+    slot_id: Optional[str] = None,
+    include_staff_details: bool = False,
+):
     snapshot = db_service.get_app_snapshot()
-    return build_state(
+    state = build_state(
         slots=snapshot["slots"],
         availability=snapshot["availability"],
         queue_entries=snapshot["queue"],
@@ -46,6 +50,13 @@ def _state(student_id: Optional[str] = None, slot_id: Optional[str] = None):
         avg_help_minutes=snapshot["averageHelpMinutes"],
         forecast=snapshot["forecast"],
     )
+    if not include_staff_details:
+        state["staff"] = {
+            "currentStudent": None,
+            "waitingEntries": [],
+            "servedCount": state["staff"]["servedCount"],
+        }
+    return state
 
 
 def _session_token_for(entry_id: str) -> str:
@@ -56,12 +67,21 @@ def _session_token_for(entry_id: str) -> str:
 def section_state(
     section_id: str,
     queue_token: Optional[str] = Header(default=None, alias="X-Queue-Token"),
+    x_user_token: Optional[str] = Header(default=None, alias="X-User-Token"),
 ):
     context = db_service.section_context(section_id)
     if not context:
         raise HTTPException(status_code=404, detail="section not found")
-    state = _state(student_id=queue_token, slot_id=section_id)
-    return db_service.serialize({**context, "state": state})
+    user = db_service.user_for_token(x_user_token)
+    is_ta = db_service.is_section_ta(user, section_id)
+    state = _state(student_id=queue_token, slot_id=section_id, include_staff_details=is_ta)
+    return db_service.serialize(
+        {
+            "section": db_service.sanitize_share_codes(context["section"], is_ta),
+            "course": db_service.sanitize_share_codes(context["course"], is_ta),
+            "state": state,
+        }
+    )
 
 
 @router.post("/api/queue", status_code=status.HTTP_201_CREATED)
@@ -138,6 +158,22 @@ def delete_queue_me(
 
 
 @router.delete("/api/queue/{entry_id}", status_code=status.HTTP_200_OK)
-def delete_queue_entry(entry_id: str, slot_id: Optional[str] = Query(default=None)):
+def delete_queue_entry(
+    entry_id: str,
+    slot_id: Optional[str] = Query(default=None),
+    queue_token: Optional[str] = Header(default=None, alias="X-Queue-Token"),
+    x_user_token: Optional[str] = Header(default=None, alias="X-User-Token"),
+):
+    entry = db_service.find_queue_entry(entry_id)
+    user = db_service.user_for_token(x_user_token)
+    target_slot_id = (entry or {}).get("slotId") or slot_id
+    is_ta = db_service.is_section_ta(user, target_slot_id)
+    if entry:
+        is_own_token = bool(queue_token and queue_token == entry_id)
+        is_own_user = bool(user and entry.get("studentUserId") and user["id"] == entry.get("studentUserId"))
+        if not (is_own_token or is_own_user or is_ta):
+            raise HTTPException(status_code=403, detail="Not authorized to remove this queue entry.")
+    elif not (queue_token == entry_id or is_ta):
+        raise HTTPException(status_code=403, detail="Not authorized to remove this queue entry.")
     removed = db_service.delete_queue_entry(entry_id)
-    return {"removed": removed, "state": db_service.serialize(_state(slot_id=slot_id))}
+    return {"removed": removed, "state": db_service.serialize(_state(slot_id=slot_id, include_staff_details=is_ta))}

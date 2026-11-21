@@ -25,10 +25,26 @@ def _state(slot_id: Optional[str] = None):
     )
 
 
-@router.get("/api/staff/queue")
-def staff_queue(slot_id: Optional[str] = Query(default=None)):
+def _require_section_ta(slot_id: Optional[str], token: Optional[str]):
     if not slot_id:
         raise HTTPException(status_code=400, detail="section id is required")
+    user = db_service.user_for_token(token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Please sign in.")
+    section = db_service.find_slot(slot_id)
+    if not section:
+        raise HTTPException(status_code=404, detail="section not found")
+    if not db_service.is_section_ta(user, slot_id):
+        raise HTTPException(status_code=403, detail="Only course TAs can manage this queue.")
+    return user, section
+
+
+@router.get("/api/staff/queue")
+def staff_queue(
+    slot_id: Optional[str] = Query(default=None),
+    x_user_token: str | None = Header(default=None, alias="X-User-Token"),
+):
+    _require_section_ta(slot_id, x_user_token)
     state = _state(slot_id=slot_id)
     return db_service.serialize(
         {
@@ -54,10 +70,14 @@ def staff_queue(slot_id: Optional[str] = Query(default=None)):
 
 
 @router.get("/api/staff/queue/{entry_id}")
-def staff_queue_entry(entry_id: str):
+def staff_queue_entry(
+    entry_id: str,
+    x_user_token: str | None = Header(default=None, alias="X-User-Token"),
+):
     entry = db_service.find_queue_entry(entry_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Queue entry not found.")
+    _require_section_ta(entry.get("slotId"), x_user_token)
     return db_service.serialize(entry)
 
 
@@ -66,11 +86,8 @@ def call_next(
     slot_id: Optional[str] = Query(default=None),
     x_user_token: str | None = Header(default=None, alias="X-User-Token"),
 ):
-    if not slot_id:
-        raise HTTPException(status_code=400, detail="section id is required")
-    user = db_service.user_for_token(x_user_token)
-    if user:
-        db_service.record_section_participation(slot_id, user["id"], "ta")
+    user, _ = _require_section_ta(slot_id, x_user_token)
+    db_service.record_section_participation(slot_id, user["id"], "ta")
 
     current = db_service.get_current_student(slot_id)
     if current:
@@ -90,11 +107,8 @@ def serve_current(
     slot_id: Optional[str] = Query(default=None),
     x_user_token: str | None = Header(default=None, alias="X-User-Token"),
 ):
-    if not slot_id:
-        raise HTTPException(status_code=400, detail="section id is required")
-    user = db_service.user_for_token(x_user_token)
-    if user:
-        db_service.record_section_participation(slot_id, user["id"], "ta")
+    user, _ = _require_section_ta(slot_id, x_user_token)
+    db_service.record_section_participation(slot_id, user["id"], "ta")
 
     served = db_service.get_current_student(slot_id)
     if served:

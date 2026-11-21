@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from dotenv import load_dotenv
 from pymongo import MongoClient, ReturnDocument
+from pymongo.errors import PyMongoError
 
 from app.services.scheduling_service import create_slot
 
@@ -31,7 +32,10 @@ client_kwargs: dict[str, Any] = {"serverSelectionTimeoutMS": 5000}
 if certifi is not None and MONGO_URL.startswith("mongodb+srv://"):
     client_kwargs["tlsCAFile"] = certifi.where()
 
-client = MongoClient(MONGO_URL, **client_kwargs)
+try:
+    client = MongoClient(MONGO_URL, **client_kwargs)
+except PyMongoError:
+    client = MongoClient("mongodb://localhost:27017", serverSelectionTimeoutMS=5000, connect=False)
 db = client[MONGO_DB_NAME]
 
 users_collection = db["users"]
@@ -67,7 +71,8 @@ def initialize_database() -> None:
     queue_collection.create_index("expiresAt", expireAfterSeconds=0)
     slot_status_collection.create_index("slotId", unique=True)
     settings_collection.update_one({"_id": "app"}, {"$setOnInsert": DEFAULT_SETTINGS}, upsert=True)
-    _seed_if_empty()
+    if os.getenv("SEED_DEMO_DATA", "").strip().lower() in {"1", "true", "yes"}:
+        _seed_if_empty()
 
 
 def ping_database() -> bool:
@@ -121,6 +126,13 @@ def user_for_token(token: str | None) -> Optional[dict[str, Any]]:
     session = sessions_collection.find_one({"token": token}, {"_id": 0})
     if not session:
         return None
+    expires_at = session.get("expiresAt")
+    if isinstance(expires_at, datetime):
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at <= utc_now():
+            sessions_collection.delete_one({"token": token})
+            return None
     return users_collection.find_one({"id": session["userId"]}, {"_id": 0})
 
 
@@ -156,8 +168,9 @@ def create_course(user: dict[str, Any], code: str, title: str | None = None) -> 
 
     existing = courses_collection.find_one({"code": course_code}, {"_id": 0})
     if existing:
-        add_user_to_course(user, existing["id"], "ta")
-        return course_by_id(existing["id"])
+        if user["id"] in (existing.get("taIds") or []):
+            return course_by_id(existing["id"])
+        raise PermissionError("A course with this code already exists. Use its TA share code to join.")
 
     course = {
         "id": f"course-{uuid4()}",
@@ -179,10 +192,41 @@ def course_by_id(course_id: str) -> Optional[dict[str, Any]]:
     return courses_collection.find_one({"id": course_id}, {"_id": 0})
 
 
+def is_course_ta(user: Optional[dict[str, Any]], course_id: Optional[str]) -> bool:
+    if not user or not course_id:
+        return False
+    course = course_by_id(course_id)
+    return bool(course and user["id"] in (course.get("taIds") or []))
+
+
+def is_section_ta(user: Optional[dict[str, Any]], section_id: Optional[str]) -> bool:
+    if not user or not section_id:
+        return False
+    section = section_by_id(section_id)
+    if not section:
+        return False
+    if user["id"] in (section.get("taIds") or []) or user["id"] in (section.get("participantTaIds") or []):
+        return True
+    return is_course_ta(user, section.get("courseId"))
+
+
+def sanitize_share_codes(document: Optional[dict[str, Any]], is_ta: bool) -> Optional[dict[str, Any]]:
+    if document is None or is_ta:
+        return document
+    cleaned = dict(document)
+    cleaned.pop("taShareCode", None)
+    cleaned.pop("studentShareCode", None)
+    return cleaned
+
+
 def update_course(course_id: str, values: dict[str, Any]) -> Optional[dict[str, Any]]:
     updates = {}
     if values.get("code"):
-        updates["code"] = values["code"].strip().upper()
+        next_code = values["code"].strip().upper()
+        conflict = courses_collection.find_one({"code": next_code, "id": {"$ne": course_id}}, {"_id": 0})
+        if conflict:
+            raise ValueError("A course with this code already exists.")
+        updates["code"] = next_code
     if values.get("title"):
         updates["title"] = values["title"].strip()
     if not updates:
@@ -193,10 +237,14 @@ def update_course(course_id: str, values: dict[str, Any]) -> Optional[dict[str, 
     return course_by_id(course_id)
 
 
-def list_courses_for_user(user: dict[str, Any], role: str) -> list[dict[str, Any]]:
+def list_courses_for_user(
+    user: dict[str, Any],
+    role: str,
+    local_date: Optional[str] = None,
+) -> list[dict[str, Any]]:
     membership_field = "taIds" if role == "ta" else "studentIds"
     courses = list(courses_collection.find({membership_field: user["id"]}, {"_id": 0}).sort([("code", 1)]))
-    return [_course_with_sections(course, role, user["id"]) for course in courses]
+    return [_course_with_sections(course, role, user["id"], local_date=local_date) for course in courses]
 
 
 def add_user_to_course(user: dict[str, Any], course_id: str, role: str) -> None:
@@ -205,7 +253,12 @@ def add_user_to_course(user: dict[str, Any], course_id: str, role: str) -> None:
     _add_course_to_user(user["id"], course_id, role)
 
 
-def join_share_code(user: dict[str, Any], code: str, role: str) -> dict[str, Any]:
+def join_share_code(
+    user: dict[str, Any],
+    code: str,
+    role: str,
+    local_date: Optional[str] = None,
+) -> dict[str, Any]:
     normalized_code = (code or "").strip().upper()
     if not normalized_code:
         raise ValueError("share code is required")
@@ -225,7 +278,26 @@ def join_share_code(user: dict[str, Any], code: str, role: str) -> dict[str, Any
         record_section_participation(section["id"], user["id"], role)
 
     add_user_to_course(user, course["id"], role)
-    return {"course": _course_with_sections(course_by_id(course["id"]), role, user["id"]), "section": section}
+    is_ta = role == "ta"
+    return {
+        "course": _course_with_sections(course_by_id(course["id"]), role, user["id"], local_date=local_date),
+        "section": sanitize_share_codes(section, is_ta),
+    }
+
+
+def _validate_section_schedule(date_value: str, start_time: str, end_time: str) -> tuple[str, str, str]:
+    clean_date = (date_value or "").strip()[:10]
+    clean_start = (start_time or "").strip()[:5]
+    clean_end = (end_time or "").strip()[:5]
+    try:
+        date.fromisoformat(clean_date)
+        start_dt = datetime.fromisoformat(f"{clean_date}T{clean_start}:00")
+        end_dt = datetime.fromisoformat(f"{clean_date}T{clean_end}:00")
+    except ValueError as error:
+        raise ValueError("Enter a valid date (YYYY-MM-DD) and time (HH:MM).") from error
+    if end_dt <= start_dt:
+        raise ValueError("End time must be after start time.")
+    return clean_date, clean_start, clean_end
 
 
 def create_section(
@@ -241,18 +313,19 @@ def create_section(
     course = course_by_id(course_id)
     if not course:
         raise LookupError("course not found")
+    clean_date, clean_start, clean_end = _validate_section_schedule(date_value, start_time, end_time)
 
     add_user_to_course(user, course_id, "ta")
     section = create_slot(
-        date=date_value[:10],
-        start_time=start_time[:5],
+        date=clean_date,
+        start_time=clean_start,
         ta_name=user.get("name") or "TA",
         location=location.strip() or "Office Hours Room",
         course_id=course_id,
         course_code=course["code"],
     )
     section["id"] = f"section-{uuid4()}"
-    section["endTime"] = end_time[:5]
+    section["endTime"] = clean_end
     section["title"] = title.strip() or f"{user.get('name') or 'TA'}'s Office Hour"
     section["zoomLink"] = zoom_link.strip()
     section["taIds"] = [user["id"]]
@@ -275,6 +348,18 @@ def update_section(section_id: str, updates: dict[str, Any]) -> Optional[dict[st
 
     allowed = {"courseId", "title", "date", "startTime", "endTime", "location", "zoomLink", "status"}
     next_values = {key: value for key, value in updates.items() if key in allowed and value is not None}
+    if any(key in next_values for key in ("date", "startTime", "endTime")):
+        clean_date, clean_start, clean_end = _validate_section_schedule(
+            next_values.get("date", section.get("date", "")),
+            next_values.get("startTime", section.get("startTime", "")),
+            next_values.get("endTime", section.get("endTime", "")),
+        )
+        if "date" in next_values:
+            next_values["date"] = clean_date
+        if "startTime" in next_values:
+            next_values["startTime"] = clean_start
+        if "endTime" in next_values:
+            next_values["endTime"] = clean_end
     if "courseId" in next_values:
         course = course_by_id(next_values["courseId"])
         if course:
@@ -519,18 +604,48 @@ def _add_course_to_user(user_id: str, course_id: str, role: str) -> None:
     users_collection.update_one({"id": user_id}, {"$addToSet": {field: course_id}})
 
 
-def _course_with_sections(course: dict[str, Any], role: str, user_id: str) -> dict[str, Any]:
-    now_key = date.today().isoformat()
+def _current_date_key(local_date: Optional[str] = None) -> str:
+    if local_date:
+        candidate = local_date.strip()[:10]
+        try:
+            date.fromisoformat(candidate)
+            return candidate
+        except ValueError:
+            pass
+    offset_env = os.getenv("APP_TIMEZONE_OFFSET_HOURS")
+    if offset_env is not None:
+        try:
+            return (utc_now() + timedelta(hours=float(offset_env))).date().isoformat()
+        except ValueError:
+            pass
+    local_now = datetime.now().astimezone()
+    if local_now.utcoffset() == timedelta(0):
+        return (utc_now() - timedelta(hours=5)).date().isoformat()
+    return local_now.date().isoformat()
+
+
+def _course_with_sections(
+    course: dict[str, Any],
+    role: str,
+    user_id: str,
+    local_date: Optional[str] = None,
+) -> dict[str, Any]:
+    now_key = _current_date_key(local_date)
+    is_ta = role == "ta" and user_id in (course.get("taIds") or [])
     sections = list(sections_collection.find({"courseId": course["id"]}, {"_id": 0}).sort([("date", 1), ("startTime", 1)]))
-    upcoming = [section for section in sections if section.get("date", "") >= now_key and section.get("status") != "cancelled"]
+    upcoming = [
+        sanitize_share_codes(section, is_ta)
+        for section in sections
+        if section.get("date", "") >= now_key and section.get("status") != "cancelled"
+    ]
     participant_field = "participantTaIds" if role == "ta" else "participantStudentIds"
     past = [
-        section
+        sanitize_share_codes(section, is_ta)
         for section in sections
         if (section.get("date", "") < now_key or section.get("status") == "cancelled")
         and user_id in section.get(participant_field, [])
     ]
-    return {**course, "upcomingSections": upcoming, "pastSections": past}
+    return {**sanitize_share_codes(course, is_ta), "upcomingSections": upcoming, "pastSections": past}
 
 
 def _section_expiry(section: dict[str, Any]) -> datetime:
