@@ -14,6 +14,19 @@ load_dotenv(PROJECT_ROOT / ".env")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-mini")
 
 
+def has_openai_key() -> bool:
+    return bool(os.getenv("OPENAI_API_KEY"))
+
+
+def analyze_locally(
+    course: str | None,
+    need: str | None,
+    message: str | None,
+    file: Any = None,
+) -> dict[str, Any]:
+    return _analyze_locally(course, need, message, file)
+
+
 def analyze_question(
     course: str | None,
     need: str | None,
@@ -21,7 +34,7 @@ def analyze_question(
     file: Any = None,
     accuracy: str = "low",
 ) -> dict[str, Any]:
-    if os.getenv("OPENAI_API_KEY"):
+    if has_openai_key():
         try:
             return _analyze_with_openai(course, need, message, file)
         except Exception:

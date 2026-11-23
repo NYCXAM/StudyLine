@@ -11,7 +11,6 @@ async function load() {
 form.addEventListener("submit", async (event) => { event.preventDefault(); const message = document.querySelector("#saveMessage"); message.textContent = "Saving…"; try { const { user } = await api("/api/auth/profile", { method: "PATCH", body: { name: document.querySelector("#name").value, preferences: { emailNotifications: document.querySelector("#emailNotifications").checked, compactMode: document.querySelector("#compactMode").checked } } }); localStorage.setItem(userCacheKey, JSON.stringify(user)); document.querySelector("#settingsUser").textContent = user.name; message.textContent = "Saved"; } catch (error) { message.textContent = error.message; } });
 document.querySelector("#signOut").addEventListener("click", async () => {
   try {
-    if (queueToken) await api("/api/queue/me", { method: "DELETE" });
     await api("/api/auth/session", { method: "DELETE" });
   } catch {}
   window.google?.accounts?.id?.disableAutoSelect?.();

@@ -21,7 +21,7 @@ class CreateAvailabilityRequest(BaseModel):
     zoom_link: str = Field(default="", alias="zoomLink", max_length=240)
 
     class Config:
-        allow_population_by_field_name = True
+        populate_by_name = True
 
 
 @router.get("/api/slots")
@@ -71,16 +71,24 @@ def create_availability(
         raise HTTPException(status_code=401, detail="Please sign in.")
     if not payload.course_id:
         raise HTTPException(status_code=400, detail="courseId is required")
-    section = db_service.create_section(
-        user=user,
-        course_id=payload.course_id,
-        date_value=payload.date,
-        start_time=payload.start_time,
-        end_time=payload.end_time,
-        location=payload.location,
-        zoom_link=payload.zoom_link,
-        title=payload.title,
-    )
+    course = db_service.course_by_id(payload.course_id)
+    if not course:
+        raise HTTPException(status_code=404, detail="course not found")
+    if not db_service.is_course_ta(user, payload.course_id):
+        raise HTTPException(status_code=403, detail="Only course TAs can change this.")
+    try:
+        section = db_service.create_section(
+            user=user,
+            course_id=payload.course_id,
+            date_value=payload.date,
+            start_time=payload.start_time,
+            end_time=payload.end_time,
+            location=payload.location,
+            zoom_link=payload.zoom_link,
+            title=payload.title,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     return {"slots": [db_service.serialize(section)], "section": db_service.serialize(section)}
 
 
@@ -89,6 +97,12 @@ def delete_availability(
     slot_id: str,
     x_user_token: str | None = Header(default=None, alias="X-User-Token"),
 ):
-    if not db_service.user_for_token(x_user_token):
+    user = db_service.user_for_token(x_user_token)
+    if not user:
         raise HTTPException(status_code=401, detail="Please sign in.")
+    existing = db_service.find_slot(slot_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="section not found")
+    if not db_service.is_section_ta(user, slot_id):
+        raise HTTPException(status_code=403, detail="Only course TAs can change this.")
     return {"removed": db_service.delete_slot(slot_id)}
