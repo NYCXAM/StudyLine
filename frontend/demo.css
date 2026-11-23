@@ -49,8 +49,8 @@
 .demo-mode-badge {
   padding: 8px 11px;
   border-radius: 6px;
-  background: #f1e4d8;
-  color: #71351f;
+  background: var(--soft);
+  color: var(--blue);
   font-size: 0.8rem;
   font-weight: 700;
 }
@@ -74,8 +74,7 @@
 }
 
 .demo-intro h1 {
-  font-family: Georgia, "Times New Roman", serif;
-  font-weight: 400;
+  font-weight: 750;
   max-width: 760px;
   margin-bottom: 12px;
   font-size: clamp(2rem, 4vw, 3.4rem);
@@ -136,8 +135,8 @@
 }
 
 .demo-view-button.active {
-  background: #f1e4d8;
-  color: #71351f;
+  background: var(--soft);
+  color: var(--blue);
 }
 
 .demo-notice {
@@ -150,10 +149,10 @@
   min-height: auto;
   margin-bottom: 18px;
   padding: 12px 14px;
-  border: 1px solid #c9b09f;
+  border: 1px solid var(--line);
   border-radius: 6px;
-  background: #f5eae1;
-  color: #71351f;
+  background: var(--soft);
+  color: var(--blue);
   font-weight: 650;
 }
 
@@ -169,14 +168,16 @@
   align-items: center;
   padding: 22px;
   border-radius: 8px;
-  background: #302c25;
+  background: var(--banner);
   color: white;
 }
 
 .demo-section-banner .eyebrow,
 .demo-section-banner p {
-  color: #e4ddd2;
+  color: var(--banner-text);
 }
+
+.demo-section-banner :focus-visible { outline-color: var(--banner-focus); }
 
 .demo-section-banner h2 {
   margin-bottom: 8px;
@@ -188,9 +189,10 @@
 
 .demo-zoom-link {
   padding: 11px 15px;
-  border-radius: 6px;
-  background: #fffefa;
-  color: #71351f;
+  border: 1px solid var(--line);
+  border-radius: var(--button-radius);
+  background: var(--panel);
+  color: var(--blue);
   text-decoration: none;
   font-weight: 700;
 }
@@ -252,7 +254,7 @@
 .demo-position div {
   padding: 16px;
   border-radius: 6px;
-  background: #eee9df;
+  background: var(--soft);
 }
 
 .demo-position strong,
@@ -339,7 +341,7 @@
 .demo-ai-summary {
   border: 1px solid var(--line);
   border-left: 3px solid var(--blue);
-  background: var(--panel);
+  background: var(--soft);
 }
 
 .demo-question-label {
@@ -388,7 +390,7 @@
 
 .demo-empty {
   padding: 26px;
-  border: 1px dashed #bcb3a5;
+  border: 1px dashed var(--line);
   border-radius: 6px;
   color: var(--muted);
   text-align: center;
