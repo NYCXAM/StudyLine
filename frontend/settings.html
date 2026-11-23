@@ -8,12 +8,12 @@
     <link rel="icon" href="assets/studyline_tab_icon.png" />
   </head>
   <body data-page="settings">
-    <main class="shell settings-shell">
-      <aside class="sidebar" aria-label="Settings navigation">
-        <div class="brand"><img class="brand-mark" src="assets/studyline_tab_icon.png" alt="" /><div><p class="eyebrow">Account</p><h1>StudyLine</h1></div></div>
-        <nav class="nav"><a class="nav-item" href="student.html">Student Courses</a><a class="nav-item" href="ta.html">TA Workspace</a><a class="nav-item active" href="settings.html">Settings</a></nav>
-      </aside>
-      <section class="workspace settings-workspace">
+    <div class="shell">
+      <header class="workspace-header">
+        <div class="brand"><a href="index.html" aria-label="StudyLine home"><img class="brand-mark" src="assets/studyline_tab_icon.png" alt="" /></a><div><p class="eyebrow">Account</p><h1>StudyLine</h1></div></div>
+        <nav class="nav" aria-label="Workspace"><a class="nav-item" href="student.html">Student Courses</a><a class="nav-item" href="ta.html">TA Workspace</a><a class="nav-item active" href="settings.html">Settings</a></nav>
+      </header>
+      <main class="workspace">
         <header class="topbar"><div><p class="eyebrow">Account</p><h2>Settings</h2></div><div class="topbar-status"><div id="settingsUser" class="status-pill">Loading…</div><button id="signOut" class="secondary-action" type="button">Sign out</button></div></header>
         <section class="panel settings-card">
           <p class="eyebrow">Profile</p><h3>Personal details</h3><p class="muted">Your email is managed by Google. Change how your name appears across StudyLine.</p>
@@ -22,8 +22,8 @@
             <div class="settings-actions"><button class="primary-action" type="submit">Save changes</button><span id="saveMessage" role="status"></span></div>
           </form>
         </section>
-      </section>
-    </main>
+      </main>
+    </div>
     <script src="settings.js"></script>
     <script src="navigation.js"></script>
   </body>

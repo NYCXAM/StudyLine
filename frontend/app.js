@@ -942,7 +942,7 @@ function renderStudentSectionTools(course, section, state) {
   const isInLine = state.queue.status !== "not_joined";
   return `
     <section class="hero-grid">
-      <article class="panel">
+      <article class="panel student-join">
         <div class="section-heading">
           <div><p class="eyebrow">Virtual Line</p><h3>${isInLine ? "You are in line" : "Join this section"}</h3></div>
           <span class="turn-badge">${escapeHtml(state.queue.status.replace("_", " "))}</span>
