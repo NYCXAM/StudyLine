@@ -232,10 +232,6 @@ function renderShell(title, body) {
 
 async function signOut() {
   try {
-    if (queueToken) {
-      const slotQuery = activeSectionId ? `?slot_id=${encodeURIComponent(activeSectionId)}` : "";
-      await api(`/api/queue/me${slotQuery}`, { method: "DELETE" });
-    }
     await api("/api/auth/session", { method: "DELETE" });
   } catch {
     // Local sign-out still completes if the server is temporarily unavailable.
@@ -486,6 +482,7 @@ async function renderDashboard(message = "") {
             endTime: data.get("endTime"),
             location: data.get("location"),
             zoomLink: data.get("zoomLink"),
+            repeatWeeks: Number(data.get("repeatWeeks") || 1),
           },
         });
         setActiveSection(result.section.id);
@@ -692,7 +689,16 @@ async function renderCourseView(courseId, message = "") {
       await runAction(formElement, async () => {
         const result = await api("/api/sections", {
           method: "POST",
-          body: { courseId: course.id, title: data.get("title"), date: data.get("date"), startTime: data.get("startTime"), endTime: data.get("endTime"), location: data.get("location"), zoomLink: data.get("zoomLink") },
+          body: {
+            courseId: course.id,
+            title: data.get("title"),
+            date: data.get("date"),
+            startTime: data.get("startTime"),
+            endTime: data.get("endTime"),
+            location: data.get("location"),
+            zoomLink: data.get("zoomLink"),
+            repeatWeeks: Number(data.get("repeatWeeks") || 1),
+          },
         });
         setActiveSection(result.section.id);
         await renderSectionView(result.section.id);
@@ -844,6 +850,14 @@ function renderAddSectionForm(course) {
         <label>End<input name="endTime" type="time" value="11:00" required /></label>
         <label>Location<input name="location" type="text" placeholder="Library 204" /></label>
         <label>Zoom link<input name="zoomLink" type="url" placeholder="https://..." /></label>
+        <label>Repeat
+          <select name="repeatWeeks">
+            <option value="1">Does not repeat</option>
+            <option value="4">Weekly for 4 weeks</option>
+            <option value="8">Weekly for 8 weeks</option>
+            <option value="12">Weekly for 12 weeks</option>
+          </select>
+        </label>
         <button class="primary-action" type="submit">Create And Open</button>
       </form>
     </details>
@@ -914,6 +928,10 @@ async function renderSectionView(sectionId) {
       ${role === "ta" ? renderTaSectionTools(course, section, state) : renderStudentSectionTools(course, section, state)}
     `
   );
+  if (role === "student" && state.queue?.studentId && state.queue?.status !== "not_joined") {
+    queueToken = state.queue.studentId;
+    window.localStorage.setItem("studyline_queue_token", queueToken);
+  }
   renderedQueueSignature = queueStateSignature(state);
   maybeNotifyNextStudent(course, section, state);
 
@@ -940,6 +958,9 @@ async function renderSectionView(sectionId) {
 
 function renderTaSectionTools(course, section, state) {
   const current = state.staff.currentStudent;
+  const activePeers = (state.staff.currentStudents || []).filter(
+    (item) => item && (!current || item.id !== current.id)
+  );
   return `
     <section class="hero-grid">
       <article class="panel crowd-panel">
@@ -955,9 +976,17 @@ function renderTaSectionTools(course, section, state) {
         <p class="metric-label">Currently helping</p>
         <h3>${escapeHtml(current?.name || "No student called")}</h3>
         <p>${current ? escapeHtml(`${current.course} · ${current.need}`) : "Call the next student when ready."}</p>
+        ${
+          activePeers.length
+            ? `<p class="muted small">Also being helped: ${activePeers
+                .map((peer) => escapeHtml(`${peer.name} (${peer.calledByTaName || "TA"})`))
+                .join(", ")}</p>`
+            : ""
+        }
         <div class="staff-actions">
           <button id="callNext" class="primary-action" type="button">Call Next</button>
           <button id="markServed" class="secondary-action" type="button">Mark Served</button>
+          ${current ? '<button id="returnCurrent" class="secondary-action" type="button">Return to Line</button>' : ""}
         </div>
       </article>
     </section>
@@ -1110,6 +1139,14 @@ function bindSectionActionForms(course, section) {
     });
   });
 
+  const returnCurrentButton = document.querySelector("#returnCurrent");
+  returnCurrentButton?.addEventListener("click", async () => {
+    await runAction(returnCurrentButton, async () => {
+      await api(`/api/staff/return-current?slot_id=${encodeURIComponent(section.id)}`, { method: "POST" });
+      await renderSectionView(section.id);
+    });
+  });
+
   document.querySelector("#queueForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const formElement = event.currentTarget;
@@ -1165,6 +1202,7 @@ function queueStateSignature(state) {
     state.live?.estimatedWaitMinutes,
     state.staff?.servedCount ?? 0,
     state.staff?.currentStudent?.id ?? null,
+    (state.staff?.currentStudents || []).map((entry) => entry.id),
     (state.staff?.waitingEntries || []).map((entry) => entry.id),
   ]);
 }

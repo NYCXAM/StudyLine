@@ -141,6 +141,7 @@ class P0SecurityAndWorkflowTests(unittest.TestCase):
             patch.object(db_service, "user_for_token", side_effect=fake_user_for_token),
             patch.object(db_service, "section_by_id", return_value=self.section),
             patch.object(db_service, "course_by_id", return_value=self.course),
+            patch.object(db_service, "find_active_entry_for_user", return_value=None),
             patch.object(db_service, "get_app_snapshot", return_value=snapshot),
         ):
             student_view = routes_queue.section_state(

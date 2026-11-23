@@ -21,7 +21,7 @@ class CreateAvailabilityRequest(BaseModel):
     zoom_link: str = Field(default="", alias="zoomLink", max_length=240)
 
     class Config:
-        allow_population_by_field_name = True
+        populate_by_name = True
 
 
 @router.get("/api/slots")

@@ -14,23 +14,26 @@ def get_state(
     slot_id: Optional[str] = Query(default=None, alias="slotId"),
     x_user_token: Optional[str] = Header(default=None, alias="X-User-Token"),
 ):
-    snapshot = db_service.get_app_snapshot()
+    user = db_service.user_for_token(x_user_token)
+    snapshot = db_service.get_app_snapshot(slot_id=slot_id)
     state = state_service.build_state(
         slots=snapshot["slots"],
         availability=snapshot["availability"],
         queue_entries=snapshot["queue"],
         current_by_slot=snapshot["currentBySlot"],
+        current_students_by_slot=snapshot.get("currentStudentsBySlot"),
         served_by_slot=snapshot["servedBySlot"],
         student_id=student_id,
         requested_slot_id=slot_id,
         tas_active=snapshot["tasActive"],
         avg_help_minutes=snapshot["averageHelpMinutes"],
         forecast=snapshot["forecast"],
+        viewer_ta_id=user["id"] if user else None,
     )
-    user = db_service.user_for_token(x_user_token)
     if not db_service.is_section_ta(user, state.get("selectedSlotId")):
         state["staff"] = {
             "currentStudent": None,
+            "currentStudents": [],
             "waitingEntries": [],
             "servedCount": state["staff"]["servedCount"],
         }

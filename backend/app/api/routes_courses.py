@@ -25,9 +25,9 @@ class CreateSectionRequest(BaseModel):
     end_time: str = Field(alias="endTime")
     location: str = Field(default="", max_length=160)
     zoom_link: str = Field(default="", alias="zoomLink", max_length=240)
+    repeat_weeks: int = Field(default=1, alias="repeatWeeks", ge=1, le=16)
 
     class Config:
-        allow_population_by_field_name = True
         populate_by_name = True
 
 
@@ -44,7 +44,6 @@ class UpdateSectionRequest(BaseModel):
     saved: bool | None = None
 
     class Config:
-        allow_population_by_field_name = True
         populate_by_name = True
 
 
@@ -120,6 +119,22 @@ def create_section(
     user = _require_user(x_user_token)
     _require_course_ta(user, payload.course_id)
     try:
+        if payload.repeat_weeks > 1:
+            sections = db_service.create_recurring_sections(
+                user=user,
+                course_id=payload.course_id,
+                date_value=payload.date,
+                start_time=payload.start_time,
+                end_time=payload.end_time,
+                location=payload.location,
+                zoom_link=payload.zoom_link,
+                title=payload.title,
+                repeat_weeks=payload.repeat_weeks,
+            )
+            return {
+                "section": db_service.serialize(sections[0]),
+                "sections": db_service.serialize(sections),
+            }
         section = db_service.create_section(
             user=user,
             course_id=payload.course_id,
@@ -134,7 +149,7 @@ def create_section(
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    return {"section": db_service.serialize(section)}
+    return {"section": db_service.serialize(section), "sections": [db_service.serialize(section)]}
 
 
 @router.patch("/api/sections/{section_id}")

@@ -17,13 +17,23 @@ def build_state(
     tas_active=1,
     avg_help_minutes=7,
     forecast=None,
+    current_students_by_slot=None,
+    viewer_ta_id=None,
 ):
     slots = list(slots or [])
     availability = list(availability or slots)
     queue_entries = list(queue_entries or [])
     current_by_slot = current_by_slot or {}
+    current_students_by_slot = current_students_by_slot or {}
     served_by_slot = served_by_slot or {}
-    selected_slot_id = _selected_slot_id(student_id, requested_slot_id, slots, queue_entries, current_by_slot)
+    selected_slot_id = _selected_slot_id(
+        student_id,
+        requested_slot_id,
+        slots,
+        queue_entries,
+        current_by_slot,
+        current_students_by_slot,
+    )
     waiting = [
         entry
         for entry in queue_entries
@@ -31,7 +41,20 @@ def build_state(
     ]
     position = _position_for_student(waiting, student_id)
     current_student = current_by_slot.get(selected_slot_id) if selected_slot_id else None
-    is_current_student = bool(student_id and current_student and current_student.get("id") == student_id)
+    current_students = list(current_students_by_slot.get(selected_slot_id) or []) if selected_slot_id else []
+    if not current_students and current_student:
+        current_students = [current_student]
+    if viewer_ta_id and current_students:
+        own_student = next((item for item in current_students if item.get("calledByTaId") == viewer_ta_id), None)
+        if own_student is not None:
+            current_student = own_student
+        elif all(item.get("calledByTaId") for item in current_students):
+            current_student = None
+    elif not current_student and current_students:
+        current_student = current_students[0]
+    is_current_student = bool(
+        student_id and any(item and item.get("id") == student_id for item in current_students)
+    )
     selected_slot = next((slot for slot in slots if slot.get("id") == selected_slot_id), None)
     section_ta_count = _section_ta_count(selected_slot, tas_active)
     wait_time = estimate_wait(waiting, section_ta_count, avg_help_minutes)
@@ -54,6 +77,7 @@ def build_state(
         },
         "staff": {
             "currentStudent": current_student,
+            "currentStudents": current_students,
             "waitingEntries": [
                 {
                     **entry,
@@ -79,7 +103,14 @@ def build_state(
     }
 
 
-def _selected_slot_id(student_id, requested_slot_id, slots, queue_entries, current_by_slot):
+def _selected_slot_id(
+    student_id,
+    requested_slot_id,
+    slots,
+    queue_entries,
+    current_by_slot,
+    current_students_by_slot=None,
+):
     if requested_slot_id:
         return requested_slot_id
 
@@ -90,6 +121,10 @@ def _selected_slot_id(student_id, requested_slot_id, slots, queue_entries, curre
         current_entry = next((entry for entry in current_by_slot.values() if entry and entry.get("id") == student_id), None)
         if current_entry:
             return current_entry.get("slotId")
+        for slot_id, active_list in (current_students_by_slot or {}).items():
+            for entry in active_list or []:
+                if entry and entry.get("id") == student_id:
+                    return entry.get("slotId") or slot_id
 
     return slots[0].get("id") if slots else None
 
